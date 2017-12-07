@@ -51,10 +51,10 @@
 
    (def status-v ["S001" "S002" "S003" "S004"
                   "S005" "S006" "S007" "S008"])
-   (def loan-csv-file-name (str root-folder "loan.csv"))
-   (def users-csv-file-name (str root-folder "branches-of-users.csv"))
+   (def loan-csv-file-name (str root-folder "csv/loan.csv"))
+   (def users-csv-file-name (str root-folder "csv/branches-of-users.csv"))
    (def lkf-csv-file-name (str root-folder "csv/lkf.csv"))
-   (def branch-csv-file-name (str root-folder "branch.csv"))
+   (def branch-csv-file-name (str root-folder "csv/branch.csv"))
    
    (defn rand-amount []
      (/ (+ 1000M (rand-int (- 1000000000 1000)))
@@ -321,7 +321,7 @@
                          insert-table-branch
                          "; \n"
                          )]
-       (spit (str root-folder "create.sql") text-sql)))  
+       (spit (str root-folder "csv/create.sql") text-sql)))  
 
 
 
