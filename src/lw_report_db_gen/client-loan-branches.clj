@@ -1,4 +1,4 @@
-(ns lw-report-db-gen.core
+(ns lw_report_db_gen.client-loan-branches
   (:require [clojure.data.csv :as csv]
                [clj-time.core :as t]
                [clj-time.coerce :as c]
@@ -11,6 +11,7 @@
    (def NO_OF_USERS 10000)
    (def NO_OF_BRANCHES 2000)
    (def NO_OF_CLIENTS 10000)
+   (def CLIENTS_PER_PACKAGE 100)
    (def birthday-from (t/local-date 1956 12 31))
    (def birthday-to (t/local-date 2000 1 1))
    (def d-from (t/local-date 2013 12 31))
@@ -245,16 +246,16 @@
       :client_id client}) 
 
 
-   (defn gen-loans [client]
-   	 (let [id (:id client)]
-       (repeatedly (num-of-loans) #(gen-loan (rand-date d-from d-to)
+   (defn gen-loans [client no-of-loans]
+     (let [id (:id client)]
+       (repeatedly no-of-loans #(gen-loan (rand-date d-from d-to)
                                              (rand-term)
                                              id))))
 
 
-   (defn gen-loan-id-client [client first-loan-id]
-     (let [loan-client-with-id (gen-loans client)]
-       (mapv #(assoc %1 :loan-id (+ first-loan-id %2))
+   (defn gen-loan-id-client [client first-loan-id no-of-loans]
+     (let [loan-client-with-id (gen-loans client no-of-loans)]
+       (mapv #(into {} (cons [:loan-id (+ first-loan-id %2)] %1))
            loan-client-with-id
            (range))))
 
@@ -284,27 +285,31 @@
      (into [] (mapcat  #(gen-loan-lkf %) loan)))
 
 
-   (defn client-data [[client-id first-loan-id]]
-     (let [client (gen-client client-id)
-           loan (gen-loan-id-client client first-loan-id)]
-       {:client [client]
-        :client-branch (client-branch client)
-        :loan loan
-        :lkf (gen-loans-lkf loan)}))
+   (def current-ids (atom {:client-id 1 :loan-id 1}))
 
 
-   (defn next-free-ids [prev-client]
-     (if (nil? prev-client)
-       [1 1]
-       (vector (-> prev-client :client first :id inc)
-               (-> prev-client :loan last :loan-id inc))))
-    
+   (defn new-ids [ids no-of-loans]
+     {:client-id (inc (:client-id ids))
+      :loan-id (+ no-of-loans (:loan-id ids))})
+
+
+   (defn client-data []
+   (let [no-of-loans (num-of-loans)
+       {:keys [client-id loan-id]} (swap! current-ids new-ids no-of-loans)
+         clint-id (dec client-id)
+         first-loan-id (- loan-id no-of-loans)
+       client (gen-client clint-id)
+         loan (gen-loan-id-client client first-loan-id no-of-loans)]
+     {:client [client]
+      :client-branch (client-branch client)
+      :loan loan
+      :lkf (gen-loans-lkf loan)}))
+
 
    (defn clients []
-     (drop 1 (iterate (fn [x] (client-data (next-free-ids x))) nil)))
+     (repeatedly client-data))
 
 
-   
 
    (defn clojure->csv [x]
      (cond
@@ -460,7 +465,7 @@
                                     (with-all-descendants (gen-branches-hierarchy)))))
        (doseq [client  (clients)
                :let [n (-> client :client first :id)]
-               :while (< n NO_OF_CLIENTS)]
+               :while (<= n NO_OF_CLIENTS)]
          (doseq [[k v] client]
            (csv/write-csv (k writers) 
                           (mapv #(to-csv-row (keys (first v)) %) v)))
@@ -471,10 +476,10 @@
          (.close writer-branches-all-desc)
          (close-writer writers)
          (save-sql))))
- 
 
-   
 
+
+  
 
 
   
