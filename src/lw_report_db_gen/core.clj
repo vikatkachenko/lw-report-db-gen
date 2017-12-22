@@ -325,6 +325,24 @@
      (doseq [writer writers] 
        (.close (val writer))))
 
+ 
+   (defn  package-merge [package]
+     (list 
+       (reduce (fn [acc x] (merge-with into acc x))
+               {:client []
+                :client-branch []
+                :loan []
+                :lkf []}
+               package)))
+
+
+   (defn package->csv [package]
+    (into {}
+      (for [client (package-merge package)]
+        (into {}
+          (for [[k v] client]
+            [k (mapv #(to-csv-row (keys (first v)) %) v)])))))
+
 
 
 
@@ -449,13 +467,15 @@
 
 
 
+
    (defn write-file []
      (let [writer-user-branches (io/writer user-branches-csv-file-name)
            writer-branches-all-desc (io/writer branch-all-desc-csv-file-name)
            writers {:client (io/writer client-csv-file-name)
                     :client-branch (io/writer client-branch-csv-file-name)
                     :loan (io/writer loan-csv-file-name)
-                    :lkf (io/writer lkf-csv-file-name)}]
+                    :lkf (io/writer lkf-csv-file-name)}
+           num-iter (/ NO_OF_CLIENTS CLIENTS_PER_PACKAGE)]
        (csv/write-csv writer-user-branches
                       (mapv #(to-csv-row fields-user-branches %)
                             (gen-users-branches)))
@@ -463,19 +483,28 @@
                       (mapv #(to-csv-row  fields-branch-all-desc %)
                             (mapcat #(gen-parent-child %)
                                     (with-all-descendants (gen-branches-hierarchy)))))
-       (doseq [client  (clients)
-               :let [n (-> client :client first :id)]
-               :while (<= n NO_OF_CLIENTS)]
-         (doseq [[k v] client]
-           (csv/write-csv (k writers) 
-                          (mapv #(to-csv-row (keys (first v)) %) v)))
-         (when (zero? (rem n 1000))
-           (println n "of" NO_OF_CLIENTS "Time:" (java.util.Date.))))
+       (doall
+         (map (fn [n package]
+                (doseq [[k v] (package->csv package)]
+                  (csv/write-csv (k writers)
+                                 v))
+                (println n "of" num-iter "Time:" (java.util.Date.)))
+             (range num-iter)
+             (partition CLIENTS_PER_PACKAGE (clients))))
        (do
          (.close writer-user-branches)
          (.close writer-branches-all-desc)
          (close-writer writers)
          (save-sql))))
+
+
+
+
+
+
+
+
+   
 
 
 
