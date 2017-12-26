@@ -5,17 +5,18 @@
                [clj-time.types :as typ]
                [clojure.string :as str]
                [clojure.java.io :as io]
-               [clojure.test.check.generators :as gen]))
+               [clojure.test.check.generators :as gen]
+               [clj-time.format :as df]))
 
 
    (def NO_OF_USERS 10000)
    (def NO_OF_BRANCHES 2000)
    (def NO_OF_CLIENTS 10000)
    (def CLIENTS_PER_PACKAGE 100)
-   (def birthday-from (t/local-date 1956 12 31))
-   (def birthday-to (t/local-date 2000 1 1))
-   (def d-from (t/local-date 2013 12 31))
-   (def d-to (t/local-date 2023 1 1))
+   (def birthday-from (t/date-time 1970 12 31))
+   (def birthday-to (t/date-time 2000 1 1))
+   (def d-from (t/date-time 2013 12 31))
+   (def d-to (t/date-time 2023 1 1))
    (def loan-term-from 60) 
    (def loan-term-to 720)
    (def status-v ["S001" "S002" "S003" "S004"
@@ -23,11 +24,12 @@
    (def branches-per-level {0 [1 1] 1 [10 30] 2 [5 20] 3 [10 30] 4 [5 15]})
    (def branch-types ["STD" "POS1" "POS2" "POS3"])
    (def branch-fixed "STD")
+   (def fake-date (t/date-time 2017 1 1))
 
 
-   (def fields-client [:id :birthday :main_branch_id])
+   (def fields-client [:id :birthday :main_branch_id :fake-date])
    (def fields-loan [:loan_id :disb_date :status :amount
-                     :term :user :client_id])
+                     :term :user :client_id :fake-date])
    (def fields-lkf [:loan_id :date :days
                     :amount1 :amount2
                     :amount3 :amount4 
@@ -35,7 +37,7 @@
                     :amount7 :amount8])
    (def fields-user-branches [:user :branch])
    (def fields-branch-all-desc [:branch-id :child-id :child-type])
-   (def fields-client-branch [:client_id :branch-id])
+   (def fields-client-branch [:client_id :branch-id :fake-date])
 
 
    (def fields-table (str "(\n "
@@ -51,7 +53,7 @@
                           "amount7 numeric(18,4),\n "
                           "amount8 numeric(18,4),\n "))
 
-
+	(def date-formatter (df/formatter "yyyy-MM-dd"))
 
 
    (def root-folder "/home/katerina/")
@@ -209,7 +211,8 @@
    (defn gen-client [n]
    	 {:id n
    	  :birthday (rand-birthday birthday-from birthday-to)
-   	  :main_branch_id (rand-branches)})
+   	  :main_branch_id (rand-branches)
+   	  :fake-date fake-date})
 
 
    (defn num-branches-for-client []
@@ -227,7 +230,7 @@
 
    (defn client-branch [x]
      (mapv #(hash-map :client-id (:id x)
-                   :branch-id %)
+                   :branch-id % :fake-date fake-date)
           (cons (:main_branch_id x) (add-branch))))
 
 
@@ -243,7 +246,8 @@
       :amount (rand-amount)
       :term term
       :user (rand-user)
-      :client_id client}) 
+      :client_id client
+      :fake-date fake-date}) 
 
 
    (defn gen-loans [client no-of-loans]
@@ -261,11 +265,11 @@
 
 
    (defn gen-kf [loan-id date] 
-     {:loan_id loan-id :date date :days (rand-int 90)
+     (array-map :loan_id loan-id :date date :days (rand-int 90)
       :amount1 (rand-amount) :amount2 (rand-amount) 
       :amount3 (rand-amount) :amount4 (rand-amount)
       :amount5 (rand-amount) :amount6 (rand-amount)
-      :amount7 (rand-amount) :amount8 (rand-amount)})
+      :amount7 (rand-amount) :amount8 (rand-amount)))
 
 
    (defn gen-loan-kf [date-loan term loan-id]
@@ -313,7 +317,7 @@
 
    (defn clojure->csv [x]
      (cond
-       (typ/local-date? x) (str (t/year x) "-" (t/month x) "-" (t/day x))
+       (typ/date-time? x) (df/unparse date-formatter x)
        :else (str x))) 
 
    (defn to-csv-row [fields m]
@@ -467,7 +471,6 @@
 
 
 
-
    (defn write-file []
      (let [writer-user-branches (io/writer user-branches-csv-file-name)
            writer-branches-all-desc (io/writer branch-all-desc-csv-file-name)
@@ -483,6 +486,7 @@
                       (mapv #(to-csv-row  fields-branch-all-desc %)
                             (mapcat #(gen-parent-child %)
                                     (with-all-descendants (gen-branches-hierarchy)))))
+
        (doall
          (map (fn [n package]
                 (doseq [[k v] (package->csv package)]
@@ -496,28 +500,3 @@
          (.close writer-branches-all-desc)
          (close-writer writers)
          (save-sql))))
-
-
-
-
-
-
-
-
-   
-
-
-
-  
-
-
-  
-
-
-
-
-
-
-
-
-
