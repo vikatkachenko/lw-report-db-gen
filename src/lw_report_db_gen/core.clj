@@ -26,18 +26,18 @@
    (def branch-fixed "STD")
    (def fake-date (t/date-time 2017 1 1))
 
-
-   (def fields-client [:id :birthday :main_branch_id :fake-date])
-   (def fields-loan [:loan_id :disb_date :status :amount
-                     :term :user :client_id :fake-date])
-   (def fields-lkf [:loan_id :date :days
-                    :amount1 :amount2
-                    :amount3 :amount4 
-                    :amount5 :amount6 
-                    :amount7 :amount8])
    (def fields-user-branches [:user :branch])
    (def fields-branch-all-desc [:branch-id :child-id :child-type])
-   (def fields-client-branch [:client_id :branch-id :fake-date])
+   
+   (def map-fields {:client [:id :birthday :main-branch-id :fake-date]
+                    :client-branch [:client-id :branch-id :fake-date]
+                    :loan [:loan-id :disb-date :status :amount
+                           :term :user :client-id :fake-date]
+                    :lkf [:loan-id :date :days
+                          :amount1 :amount2
+                          :amount3 :amount4 
+                          :amount5 :amount6 
+                          :amount7 :amount8]})
 
 
    (def fields-table (str "(\n "
@@ -211,7 +211,7 @@
    (defn gen-client [n]
    	 {:id n
    	  :birthday (rand-birthday birthday-from birthday-to)
-   	  :main_branch_id (rand-branches)
+   	  :main-branch-id (rand-branches)
    	  :fake-date fake-date})
 
 
@@ -230,8 +230,9 @@
 
    (defn client-branch [x]
      (mapv #(hash-map :client-id (:id x)
-                   :branch-id % :fake-date fake-date)
-          (cons (:main_branch_id x) (add-branch))))
+                      :branch-id % 
+                      :fake-date fake-date)
+           (cons (:main-branch-id x) (add-branch))))
 
 
    (defn num-of-loans []
@@ -241,12 +242,12 @@
    
 
    (defn gen-loan [date term client] 
-     {:disb_date date 
+     {:disb-date date 
       :status (rand-status)
       :amount (rand-amount)
       :term term
       :user (rand-user)
-      :client_id client
+      :client-id client
       :fake-date fake-date}) 
 
 
@@ -265,11 +266,11 @@
 
 
    (defn gen-kf [loan-id date] 
-     (array-map :loan_id loan-id :date date :days (rand-int 90)
+     {:loan-id loan-id :date date :days (rand-int 90)
       :amount1 (rand-amount) :amount2 (rand-amount) 
       :amount3 (rand-amount) :amount4 (rand-amount)
       :amount5 (rand-amount) :amount6 (rand-amount)
-      :amount7 (rand-amount) :amount8 (rand-amount)))
+      :amount7 (rand-amount) :amount8 (rand-amount)})
 
 
    (defn gen-loan-kf [date-loan term loan-id]
@@ -279,7 +280,7 @@
 
 
    (defn gen-loan-lkf [n]
-     (let [date-loan(:disb_date n)
+     (let [date-loan(:disb-date n)
            term-loan (:term n)
            loan-id (:loan-id n)]
        (gen-loan-kf date-loan term-loan loan-id)))
@@ -329,25 +330,12 @@
      (doseq [writer writers] 
        (.close (val writer))))
 
- 
-   (defn  package-merge [package]
-     (list 
-       (reduce (fn [acc x] (merge-with into acc x))
-               {:client []
-                :client-branch []
-                :loan []
-                :lkf []}
-               package)))
 
 
    (defn package->csv [package]
-    (into {}
-      (for [client (package-merge package)]
-        (into {}
-          (for [[k v] client]
-            [k (mapv #(to-csv-row (keys (first v)) %) v)])))))
-
-
+     (into {}
+       (for [[k v] (apply merge-with concat package)]
+         [k (mapv #(to-csv-row (k map-fields) %) v)])))
 
 
 
@@ -376,6 +364,7 @@
           "id integer NOT NULL, \n "
           "birthday date, \n "
           "main_branch_id integer NOT NULL, \n "
+          "fake_date date, \n "
           "CONSTRAINT pk_client PRIMARY KEY(id)\n "
           ")"))
 
@@ -385,6 +374,7 @@
           "(\n "
           "client_id integer NOT NULL, \n "
           "branch_id integer NOT NULL, \n "
+          "fake_date date, \n "
           "CONSTRAINT pk_client_branch PRIMARY KEY(client_id, branch_id)\n "
           ")"))
 
@@ -399,6 +389,7 @@
           "term integer,\n "
           "user integer NOT NULL,\n "
           "client_id integer NOT NULL,\n "
+          "fake_date date, \n "
           "CONSTRAINT pk_loan PRIMARY KEY (loan_id)\n "
           ")"))
 
@@ -425,8 +416,8 @@
 
    (defn save-sql []
      (let [table-client (gen-create-table-client)
-     	   table-loan (gen-create-table-loan)
-     	   table-lkf (gen-create-table-lkf)
+     	     table-loan (gen-create-table-loan)
+     	     table-lkf (gen-create-table-lkf)
            tables-index-lkf (gen-create-index-table-lkf)
            table-user-branches (gen-create-table-user-branches)
            table-branch-all-desc (gen-create-table-branch-all-desc)
