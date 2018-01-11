@@ -26,13 +26,14 @@
    (def branch-fixed "STD")
    (def fake-date (t/date-time 2017 1 1))
 
-   (def fields-user-branches [:user :branch])
+   (def fields-user-branches [:user :branch :fake-value])
    (def fields-branch-all-desc [:branch-id :child-id :child-type])
+   (def fields-branch [:id :branch-type])
    
    (def map-fields {:client [:id :birthday :main-branch-id :fake-date]
                     :client-branch [:client-id :branch-id :fake-date]
                     :loan [:loan-id :disb-date :status :amount
-                           :term :user :client-id :fake-date]
+                           :term :user :client-id :fake-date :branch]
                     :lkf [:loan-id :date :days
                           :amount1 :amount2
                           :amount3 :amount4 
@@ -65,6 +66,7 @@
    (def user-branches-csv-file-name (str root-folder "csv/user-branches.csv"))
    (def branch-all-desc-csv-file-name (str root-folder "csv/branch-all-desc.csv"))
    (def client-branch-csv-file-name (str root-folder "csv/client-branch.csv"))
+   (def branch-csv-file-name (str root-folder "csv/branch.csv"))
 
 
 
@@ -114,7 +116,7 @@
 
 
    (defn gen-branches [user branch]
-     {:user user :branch branch})
+     {:user user :branch branch :fake-value 0})
 
 
    (defn id-branches [user]
@@ -188,7 +190,8 @@
 
    (defn with-all-descendants
      [branches]
-     (mapv #(assoc % :children (all-descendants branches (:id %)))
+     (mapv #(assoc % :children (conj (all-descendants branches (:id %))
+                                     (vector (:id %) (:branch-type %))))
            branches))
 
 
@@ -204,6 +207,13 @@
 
    (defn gen-branches-hierarchy []
      (gen-hierarchy-level 0 1))
+
+
+   (defn gen-branch-type [hierarchy]
+     (map (fn [{:keys [id branch-type]}]
+            {:id id
+             :branch-type branch-type})
+          hierarchy))
 
 
 
@@ -229,9 +239,9 @@
 
 
    (defn client-branch [x]
-     (mapv #(hash-map :client-id (:id x)
-                      :branch-id % 
-                      :fake-date fake-date)
+     (mapv #(array-map :client-id (:id x)
+                       :branch-id % 
+                       :fake-date fake-date)
            (cons (:main-branch-id x) (add-branch))))
 
 
@@ -239,27 +249,39 @@
      (gen/generate
        (gen/frequency [[7 (gen/return 1)]
                        [3 (gen/choose 2 4)]])))
+
+
+   (defn branch-for-loan [client client-branches]
+     (gen/generate
+       (gen/frequency [[9.5 (gen/return (:main-branch-id client))]
+                       [0.5 (gen/return (->> client-branches
+                                             (map #(:branch-id %))
+                                             (rand-nth)))]])))
    
 
-   (defn gen-loan [date term client] 
+   (defn gen-loan [date term client client-loan client-branches] 
      {:disb-date date 
       :status (rand-status)
       :amount (rand-amount)
       :term term
       :user (rand-user)
       :client-id client
-      :fake-date fake-date}) 
+      :fake-date fake-date
+      :branch (branch-for-loan client-loan client-branches)}) 
 
 
-   (defn gen-loans [client no-of-loans]
+   (defn gen-loans [client no-of-loans client-branches]
      (let [id (:id client)]
        (repeatedly no-of-loans #(gen-loan (rand-date d-from d-to)
                                              (rand-term)
-                                             id))))
+                                             id
+                                             client
+                                             client-branches))))
 
 
-   (defn gen-loan-id-client [client first-loan-id no-of-loans]
-     (let [loan-client-with-id (gen-loans client no-of-loans)]
+   (defn gen-loan-id-client 
+     [client first-loan-id no-of-loans client-branches]
+     (let [loan-client-with-id (gen-loans client no-of-loans client-branches)]
        (mapv #(into {} (cons [:loan-id (+ first-loan-id %2)] %1))
              loan-client-with-id
              (range))))
@@ -298,17 +320,24 @@
       :loan-id (+ no-of-loans (:loan-id ids))})
 
 
+
+
    (defn client-data []
      (let [no-of-loans (num-of-loans)
            {:keys [client-id loan-id]} (swap! current-ids new-ids no-of-loans)
            client-id (dec client-id)
            first-loan-id (- loan-id no-of-loans)
            client (gen-client client-id)
-           loan (gen-loan-id-client client first-loan-id no-of-loans)]
+           client-branches  (client-branch client)
+           loan (gen-loan-id-client client
+                                    first-loan-id
+                                    no-of-loans
+                                    client-branches)]
        {:client [client]
-        :client-branch (client-branch client)
+        :client-branch client-branches
         :loan loan
         :lkf (gen-loans-lkf loan)}))
+   
 
 
    (defn clients []
@@ -344,7 +373,17 @@
           "(\n "
           "user integer NOT NULL, \n "
           "branch integer NOT NULL, \n "
+          "fake_value integer, \n "
           "CONSTRAINT pk_user_branches PRIMARY KEY(user,branch)\n "
+          ")"))
+
+
+   (defn gen-create-table-branch []
+     (str "CREATE TABLE branch \n"
+          "(\n "
+          "id integer NOT NULL,\n "
+          "branch_type varchar(6),\n "
+          "CONSTRAINT pk_branch PRIMARY KEY (id)\n "
           ")"))
 
 
@@ -390,6 +429,7 @@
           "user integer NOT NULL,\n "
           "client_id integer NOT NULL,\n "
           "fake_date date, \n "
+          "branch integer NOT NULL, \n "
           "CONSTRAINT pk_loan PRIMARY KEY (loan_id)\n "
           ")"))
 
@@ -420,6 +460,7 @@
      	     table-lkf (gen-create-table-lkf)
            tables-index-lkf (gen-create-index-table-lkf)
            table-user-branches (gen-create-table-user-branches)
+           table-branch (gen-create-table-branch)
            table-branch-all-desc (gen-create-table-branch-all-desc)
            table-client-branch (gen-create-table-client-branch)
            insert-table-client (gen-insert-table "client" client-csv-file-name)
@@ -427,6 +468,7 @@
            insert-table-lkf (gen-insert-table "lkf" lkf-csv-file-name)
            insert-table-user-branches (gen-insert-table "user_branches"
                                                         user-branches-csv-file-name)
+           insert-table-branch (gen-insert-table "branch" branch-csv-file-name)
            insert-table-branch-all-desc (gen-insert-table "branch_all_desc"
                                                           branch-all-desc-csv-file-name)
            insert-table-client-branch (gen-insert-table "client_branch"
@@ -448,6 +490,10 @@
                          table-user-branches
                          "; \n"
                          insert-table-user-branches
+                         "; \n"
+                         table-branch
+                         "; \n"
+                         insert-table-branch
                          "; \n" 
                          table-branch-all-desc
                          "; \n"
@@ -465,18 +511,23 @@
    (defn write-file []
      (let [writer-user-branches (io/writer user-branches-csv-file-name)
            writer-branches-all-desc (io/writer branch-all-desc-csv-file-name)
+           writer-branch (io/writer branch-csv-file-name)
            writers {:client (io/writer client-csv-file-name)
                     :client-branch (io/writer client-branch-csv-file-name)
                     :loan (io/writer loan-csv-file-name)
                     :lkf (io/writer lkf-csv-file-name)}
-           num-iter (/ NO_OF_CLIENTS CLIENTS_PER_PACKAGE)]
+           num-iter (/ NO_OF_CLIENTS CLIENTS_PER_PACKAGE)
+           hierarchy (gen-branches-hierarchy)]
        (csv/write-csv writer-user-branches
                       (mapv #(to-csv-row fields-user-branches %)
                             (gen-users-branches)))
        (csv/write-csv writer-branches-all-desc
                       (mapv #(to-csv-row  fields-branch-all-desc %)
                             (mapcat #(gen-parent-child %)
-                                    (with-all-descendants (gen-branches-hierarchy)))))
+                                    (with-all-descendants hierarchy))))
+       (csv/write-csv writer-branch
+                      (mapv #(to-csv-row fields-branch %)
+                            (gen-branch-type hierarchy)))
 
        (doall
          (map (fn [n package]
@@ -489,5 +540,12 @@
        (do
          (.close writer-user-branches)
          (.close writer-branches-all-desc)
+         (.close writer-branch)
          (close-writer writers)
          (save-sql))))
+
+
+
+   (def NO_OF_CLIENTS 1000)
+   (def NO_OF_BRANCHES 200)
+   (def CLIENTS_PER_PACKAGE 10)
