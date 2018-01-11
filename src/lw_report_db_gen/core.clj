@@ -546,6 +546,4 @@
 
 
 
-   (def NO_OF_CLIENTS 1000)
-   (def NO_OF_BRANCHES 200)
-   (def CLIENTS_PER_PACKAGE 10)
+   
